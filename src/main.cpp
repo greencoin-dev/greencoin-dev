@@ -19,7 +19,7 @@ using namespace std;
 using namespace boost;
 
 #if defined(NDEBUG)
-# error "Litecoin cannot be compiled without assertions."
+# error "Greencoin cannot be compiled without assertions."
 #endif
 
 //
@@ -35,7 +35,7 @@ CTxMemPool mempool;
 unsigned int nTransactionsUpdated = 0;
 
 map<uint256, CBlockIndex*> mapBlockIndex;
-uint256 hashGenesisBlock("0x12a765e31ffd4059bada1e25190f6e98c99d9714d334efa41a195a7e7e04bfe2");
+uint256 hashGenesisBlock("0x63a432df624fb9761b4436a81a74bdbbb6b7aead9c1b4cb9c0fdcbfe3b9c00c7");
 static CBigNum bnProofOfWorkLimit(~uint256(0) >> 20); // Litecoin: starting difficulty is 1 / 2^12
 CBlockIndex* pindexGenesisBlock = NULL;
 int nBestHeight = -1;
@@ -66,9 +66,10 @@ map<uint256, CTransaction> mapOrphanTransactions;
 map<uint256, set<uint256> > mapOrphanTransactionsByPrev;
 
 // Constant stuff for coinbase transactions we create:
+CScript GREENCOIN_SCRIPT;
 CScript COINBASE_FLAGS;
 
-const string strMessageMagic = "Litecoin Signed Message:\n";
+const string strMessageMagic = "Greencoin Signed Message:\n";
 
 double dHashesPerSec = 0.0;
 int64 nHPSTimerStart = 0;
@@ -1087,16 +1088,20 @@ uint256 static GetOrphanRoot(const CBlockHeader* pblock)
 
 int64 static GetBlockValue(int nHeight, int64 nFees)
 {
-    int64 nSubsidy = 50 * COIN;
+    int64 nSubsidy = 2000 * COIN;
 
     // Subsidy is cut in half every 840000 blocks, which will occur approximately every 4 years
-    nSubsidy >>= (nHeight / 840000); // Litecoin: 840k blocks in ~4 years
+    nSubsidy >>= (nHeight / 2500000); // Greencoin: 2500k blocka
+
+    //GreenCoin Subsidy payment
+    for (int x = 0; x < (nHeight / 25000000); x++)
+        nSubsidy = nSubsidy * 1 / 2;
 
     return nSubsidy + nFees;
 }
 
-static const int64 nTargetTimespan = 3.5 * 24 * 60 * 60; // Litecoin: 3.5 days
-static const int64 nTargetSpacing = 2.5 * 60; // Litecoin: 2.5 minutes
+static const int64 nTargetTimespan = 1800;
+static const int64 nTargetSpacing = 60;
 static const int64 nInterval = nTargetTimespan / nTargetSpacing;
 
 //
@@ -1719,6 +1724,15 @@ bool CBlock::ConnectBlock(CValidationState &state, CBlockIndex* pindex, CCoinsVi
     int64 nTime = GetTimeMicros() - nStart;
     if (fBenchmark)
         printf("- Connect %u transactions: %.2fms (%.3fms/tx, %.3fms/txin)\n", (unsigned)vtx.size(), 0.001 * nTime, 0.001 * nTime / vtx.size(), nInputs <= 1 ? 0 : 0.001 * nTime / (nInputs-1));
+
+    //For GreenCoin, first output must go to GreencoinFoundation address
+    if (vtx[0].vout[0].scriptPubKey != GREENCOIN_SCRIPT)
+        return state.DoS(100, error("ConnectBlock() : coinbase does not pay to the charity in the first output)"));
+
+    int64 greencoinAmount = GetBlockValue(pindex->nHeight, 0) / 100;
+    if (vtx[0].vout[0].nValue < greencoinAmount)
+        return state.DoS(100, error("ConnectBlock() : coinbase does not pay enough to the charity (actual=%"PRI64d" vs required=%"PRI64d")", vtx[0].vout[0].nValue, greencoinAmount));
+
 
     if (vtx[0].GetValueOut() > GetBlockValue(pindex->nHeight, nFees))
         return state.DoS(100, error("ConnectBlock() : coinbase pays too much (actual=%"PRI64d" vs limit=%"PRI64d")", vtx[0].GetValueOut(), GetBlockValue(pindex->nHeight, nFees)));
@@ -2760,6 +2774,9 @@ bool LoadBlockIndex()
 
 
 bool InitBlockIndex() {
+
+    // Setup Greencoin Script
+    GREENCOIN_SCRIPT << OP_DUP <<OP_HASH160 << ParseHex(GREENCOIN_ADDRESS) << OP_EQUALVERIFY << OP_CHECKSIG;
     // Check whether we're already initialized
     if (pindexGenesisBlock != NULL)
         return true;
@@ -2779,26 +2796,26 @@ bool InitBlockIndex() {
         //   vMerkleTree: 97ddfbbae6
 
         // Genesis block
-        const char* pszTimestamp = "NY Times 05/Oct/2011 Steve Jobs, Apple’s Visionary, Dies at 56";
+        const char* pszTimestamp = "GreenCoin - 6/7/2014 Saturday, 1402160424";
         CTransaction txNew;
         txNew.vin.resize(1);
         txNew.vout.resize(1);
         txNew.vin[0].scriptSig = CScript() << 486604799 << CBigNum(4) << vector<unsigned char>((const unsigned char*)pszTimestamp, (const unsigned char*)pszTimestamp + strlen(pszTimestamp));
-        txNew.vout[0].nValue = 50 * COIN;
-        txNew.vout[0].scriptPubKey = CScript() << ParseHex("040184710fa689ad5023690c80f3a49c8f13f8d45b8c857fbcbc8bc4a8e4d3eb4b10f4d4604fa08dce601aaf0f470216fe1b51850b4acf21b179c45070ac7b03a9") << OP_CHECKSIG;
+        txNew.vout[0].nValue = 25 * COIN;
+        txNew.vout[0].scriptPubKey = GREENCOIN_SCRIPT;
         CBlock block;
         block.vtx.push_back(txNew);
         block.hashPrevBlock = 0;
         block.hashMerkleRoot = block.BuildMerkleTree();
         block.nVersion = 1;
-        block.nTime    = 1317972665;
-        block.nBits    = 0x1e0ffff0;
-        block.nNonce   = 2084524493;
-
+        block.nTime = 1402160424;
+        block.nBits = 0x1e0ffff0;
+        block.nNonce = 2046606399;
+	
         if (fTestNet)
         {
-            block.nTime    = 1317798646;
-            block.nNonce   = 385270584;
+            block.nTime  = 1407518426;
+            block.nNonce = 2046787254 ;
         }
 
         //// debug print
@@ -2806,7 +2823,7 @@ bool InitBlockIndex() {
         printf("%s\n", hash.ToString().c_str());
         printf("%s\n", hashGenesisBlock.ToString().c_str());
         printf("%s\n", block.hashMerkleRoot.ToString().c_str());
-        assert(block.hashMerkleRoot == uint256("0x97ddfbbae6be97fd6cdf3e7ca13232a3afff2353e29badfab7f73011edd4ced9"));
+        assert(block.hashMerkleRoot == uint256("0x135aab1273776b7fd6a69c9e118c47aef52c1ab131c14f6a7a86b4cb40cd0ae2"));
         block.print();
         assert(hash == hashGenesisBlock);
 
@@ -4232,8 +4249,9 @@ CBlockTemplate* CreateNewBlock(const CScript& scriptPubKeyIn)
     CTransaction txNew;
     txNew.vin.resize(1);
     txNew.vin[0].prevout.SetNull();
-    txNew.vout.resize(1);
-    txNew.vout[0].scriptPubKey = scriptPubKeyIn;
+    txNew.vout.resize(2);
+    txNew.vout[0].scriptPubKey = GREENCOIN_SCRIPT;
+    txNew.vout[1].scriptPubKey = scriptPubKeyIn;
 
     // Add our coinbase tx as first transaction
     pblock->vtx.push_back(txNew);
